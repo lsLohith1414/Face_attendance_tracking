@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+
+{% block title %}Face Recognition - Face Recognition System{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="text-center mb-4">
+                    <i class="fas fa-camera me-2"></i>Real-time Face Recognition
+                </h2>
+                
+                <div class="row">
+                    <!-- Webcam Feed -->
+                    <div class="col-md-8">
+                        <div class="card">
+                            <div class="card-body p-0">
+                                <div class="position-relative">
+                                    <video id="webcam" class="w-100" autoplay></video>
+                                    <canvas id="canvas" class="d-none"></canvas>
+                                    <div id="face-overlay" class="position-absolute top-0 start-0 w-100 h-100"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Recognition Results -->
+                    <div class="col-md-4">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h5 class="card-title mb-3">Recognition Results</h5>
+                                <div id="recognition-status" class="text-center mb-4">
+                                    <div class="spinner-border text-primary" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                    <p class="mt-2">Initializing face recognition...</p>
+                                </div>
+                                
+                                <div id="recognition-results" class="d-none">
+                                    <div class="text-center mb-3">
+                                        <i class="fas fa-user-circle fa-3x mb-2"></i>
+                                        <h4 id="employee-name" class="mb-1"></h4>
+                                        <p id="employee-details" class="text-muted mb-0"></p>
+                                    </div>
+                                    
+                                    <div class="mt-4">
+                                        <h6>Recognition Details</h6>
+                                        <ul class="list-unstyled">
+                                            <li class="mb-2">
+                                                <i class="fas fa-check-circle text-success me-2"></i>
+                                                <span id="confidence-score"></span>
+                                            </li>
+                                            <li class="mb-2">
+                                                <i class="fas fa-clock me-2"></i>
+                                                <span id="last-update"></span>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                
+                                <div id="no-face-detected" class="text-center d-none">
+                                    <i class="fas fa-user-slash fa-3x text-muted mb-3"></i>
+                                    <p class="text-muted">No face detected in frame</p>
+                                </div>
+                                
+                                <div id="face-not-recognized" class="text-center d-none">
+                                    <i class="fas fa-exclamation-circle fa-3x text-warning mb-3"></i>
+                                    <p class="text-muted">Face detected but not recognized</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Controls -->
+                <div class="row mt-4">
+                    <div class="col-12 text-center">
+                        <button id="start-camera" class="btn btn-primary btn-lg">
+                            <i class="fas fa-camera me-2"></i>Start Camera
+                        </button>
+                        <button id="stop-camera" class="btn btn-danger btn-lg d-none">
+                            <i class="fas fa-stop me-2"></i>Stop Camera
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const video = document.getElementById('webcam');
+    const canvas = document.getElementById('canvas');
+    const startButton = document.getElementById('start-camera');
+    const stopButton = document.getElementById('stop-camera');
+    const recognitionStatus = document.getElementById('recognition-status');
+    const recognitionResults = document.getElementById('recognition-results');
+    const noFaceDetected = document.getElementById('no-face-detected');
+    const faceNotRecognized = document.getElementById('face-not-recognized');
+    const employeeName = document.getElementById('employee-name');
+    const employeeDetails = document.getElementById('employee-details');
+    const confidenceScore = document.getElementById('confidence-score');
+    const lastUpdate = document.getElementById('last-update');
+    
+    let stream = null;
+    let isRecognizing = false;
+    let recognitionInterval = null;
+    
+    // Start camera
+    startButton.addEventListener('click', () => {
+        navigator.mediaDevices.getUserMedia({ 
+            video: { 
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                facingMode: "user"
+            } 
+        })
+        .then((streamObj) => {
+            stream = streamObj;
+            video.srcObject = stream;
+            startButton.classList.add('d-none');
+            stopButton.classList.remove('d-none');
+            isRecognizing = true;
+            startRecognition();
+        })
+        .catch((err) => {
+            console.error("Error accessing the webcam: ", err);
+            let errorMessage = "Failed to access the webcam. ";
+            if (err.name === 'NotAllowedError') {
+                errorMessage += "Please grant camera permissions in your browser settings.";
+            } else if (err.name === 'NotFoundError') {
+                errorMessage += "No camera device found. Please connect a camera and try again.";
+            } else if (err.name === 'NotReadableError') {
+                errorMessage += "Camera is in use by another application. Please close other apps using the camera.";
+            } else {
+                errorMessage += "Please ensure your camera is connected and working properly.";
+            }
+            alert(errorMessage);
+        });
+    });
+    
+    // Stop camera
+    stopButton.addEventListener('click', () => {
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+            stream = null;
+        }
+        if (recognitionInterval) {
+            clearInterval(recognitionInterval);
+        }
+        isRecognizing = false;
+        startButton.classList.remove('d-none');
+        stopButton.classList.add('d-none');
+        recognitionStatus.classList.remove('d-none');
+        recognitionResults.classList.add('d-none');
+        noFaceDetected.classList.add('d-none');
+        faceNotRecognized.classList.add('d-none');
+    });
+    
+    function startRecognition() {
+        recognitionInterval = setInterval(() => {
+            if (!isRecognizing) return;
+            
+            const context = canvas.getContext('2d');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            const imageData = canvas.toDataURL('image/jpeg', 0.8);
+            
+            // First detect face
+            fetch('/detect_face', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `image=${encodeURIComponent(imageData)}`,
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.face_detected) {
+                    // If face detected, try to recognize it
+                    recognizeFace(imageData);
+                } else {
+                    showNoFaceDetected();
+                }
+            })
+            .catch(error => {
+                console.error("Error detecting face: ", error);
+                showNoFaceDetected();
+            });
+        }, 1000); // Check every second
+    }
+    
+    function recognizeFace(imageData) {
+        fetch('/recognize_webcam', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `image=${encodeURIComponent(imageData)}`,
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showRecognitionSuccess(data);
+            } else {
+                showFaceNotRecognized();
+            }
+        })
+        .catch(error => {
+            console.error("Error recognizing face: ", error);
+            showFaceNotRecognized();
+        });
+    }
+    
+    function showRecognitionSuccess(data) {
+        recognitionStatus.classList.add('d-none');
+        recognitionResults.classList.remove('d-none');
+        noFaceDetected.classList.add('d-none');
+        faceNotRecognized.classList.add('d-none');
+        
+        employeeName.textContent = data.name;
+        employeeDetails.textContent = `ID: ${data.emp_id}`;
+        confidenceScore.textContent = `Confidence: ${(data.probability * 100).toFixed(2)}%`;
+        lastUpdate.textContent = new Date().toLocaleTimeString();
+        
+        // Add visual feedback for successful recognition
+        const overlay = document.getElementById('face-overlay');
+        overlay.style.border = '3px solid #28a745';
+        setTimeout(() => {
+            overlay.style.border = 'none';
+        }, 1000);
+    }
+    
+    function showNoFaceDetected() {
+        recognitionStatus.classList.add('d-none');
+        recognitionResults.classList.add('d-none');
+        noFaceDetected.classList.remove('d-none');
+        faceNotRecognized.classList.add('d-none');
+    }
+    
+    function showFaceNotRecognized() {
+        recognitionStatus.classList.add('d-none');
+        recognitionResults.classList.add('d-none');
+        noFaceDetected.classList.add('d-none');
+        faceNotRecognized.classList.remove('d-none');
+        
+        // Add visual feedback for unrecognized face
+        const overlay = document.getElementById('face-overlay');
+        overlay.style.border = '3px solid #ffc107';
+        setTimeout(() => {
+            overlay.style.border = 'none';
+        }, 1000);
+    }
+});
+</script>
+{% endblock %} 

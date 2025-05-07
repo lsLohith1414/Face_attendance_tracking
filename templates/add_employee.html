@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+
+{% block title %}Add New Employee - Face Recognition System{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="text-center mb-4">Add New Employee</h2>
+                <form id="employeeForm" method="POST" enctype="multipart/form-data">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="name" class="form-label">Full Name</label>
+                            <input type="text" class="form-control" id="name" name="name" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="emp_id" class="form-label">Employee ID</label>
+                            <input type="text" class="form-control" id="emp_id" name="emp_id" required>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="username" class="form-label">Username</label>
+                            <input type="text" class="form-control" id="username" name="username" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="password" class="form-label">Password</label>
+                            <input type="password" class="form-control" id="password" name="password" required>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="age" class="form-label">Age</label>
+                            <input type="number" class="form-control" id="age" name="age" min="18" max="100" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="department" class="form-label">Department</label>
+                            <select class="form-select" id="department" name="department" required>
+                                <option value="">Select Department</option>
+                                <option value="IT">IT</option>
+                                <option value="HR">HR</option>
+                                <option value="Finance">Finance</option>
+                                <option value="Marketing">Marketing</option>
+                                <option value="Operations">Operations</option>
+                                <option value="Sales">Sales</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="images" class="form-label">Employee Photos (10-50 images)</label>
+                        <input type="file" class="form-control" id="images" name="images" multiple accept=".jpg,.jpeg,.png" required>
+                        <div class="form-text">
+                            <i class="fas fa-info-circle me-1"></i>
+                            Upload between 10 to 50 clear face photos of the employee. Photos should be well-lit and show the face clearly.
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-user-plus me-2"></i>Add Employee & Train Model
+                        </button>
+                        <a href="{{ url_for('home') }}" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Training Progress Modal -->
+<div class="modal fade" id="trainingModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body text-center p-5">
+                <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <h4 class="mb-3">Training Face Recognition Model</h4>
+                <p class="text-muted mb-4" id="trainingStatus">Processing employee data and training the model...</p>
+                <div class="progress mb-4" style="height: 10px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                </div>
+                <div id="trainingDetails" class="small text-muted"></div>
+                <div id="successMessage" class="alert alert-success d-none">
+                    <i class="fas fa-check-circle me-2"></i>
+                    Employee added successfully and model trained!
+                </div>
+                <div id="errorMessage" class="alert alert-danger d-none">
+                    <i class="fas fa-exclamation-circle me-2"></i>
+                    An error occurred during training.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Preview selected images
+    document.getElementById('images').addEventListener('change', function(e) {
+        const files = e.target.files;
+        if (files.length < 10) {
+            alert('Please select at least 10 images.');
+            this.value = '';
+            return;
+        }
+        if (files.length > 50) {
+            alert('Please select no more than 50 images.');
+            this.value = '';
+            return;
+        }
+    });
+
+    // Handle form submission
+    document.getElementById('employeeForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const formData = new FormData(this);
+        const trainingModal = new bootstrap.Modal(document.getElementById('trainingModal'));
+        const progressBar = document.querySelector('.progress-bar');
+        const trainingStatus = document.getElementById('trainingStatus');
+        const trainingDetails = document.getElementById('trainingDetails');
+        const successMessage = document.getElementById('successMessage');
+        const errorMessage = document.getElementById('errorMessage');
+        
+        // Reset messages
+        successMessage.classList.add('d-none');
+        errorMessage.classList.add('d-none');
+        
+        // Show the modal
+        trainingModal.show();
+        
+        try {
+            // First, submit the form data
+            const response = await fetch('/add_employee', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                // Start polling for training status
+                let progress = 0;
+                const pollInterval = setInterval(async () => {
+                    try {
+                        const statusResponse = await fetch('/training_status');
+                        const statusData = await statusResponse.json();
+                        
+                        progress = statusData.progress;
+                        progressBar.style.width = `${progress}%`;
+                        trainingStatus.textContent = statusData.status;
+                        trainingDetails.textContent = statusData.details;
+                        
+                        if (statusData.completed) {
+                            clearInterval(pollInterval);
+                            
+                            if (statusData.success) {
+                                successMessage.classList.remove('d-none');
+                                setTimeout(() => {
+                                    trainingModal.hide();
+                                    window.location.href = '/';
+                                }, 3000);
+                            } else {
+                                errorMessage.classList.remove('d-none');
+                                errorMessage.innerHTML = `<i class="fas fa-exclamation-circle me-2"></i>${statusData.error || 'Training failed. Please try again.'}`;
+                                setTimeout(() => {
+                                    trainingModal.hide();
+                                }, 5000);
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error polling training status:', error);
+                        clearInterval(pollInterval);
+                        errorMessage.classList.remove('d-none');
+                        errorMessage.innerHTML = '<i class="fas fa-exclamation-circle me-2"></i>Error checking training status';
+                        setTimeout(() => {
+                            trainingModal.hide();
+                        }, 5000);
+                    }
+                }, 1000);
+            } else {
+                errorMessage.classList.remove('d-none');
+                errorMessage.innerHTML = `<i class="fas fa-exclamation-circle me-2"></i>${result.message}`;
+                setTimeout(() => {
+                    trainingModal.hide();
+                }, 5000);
+            }
+        } catch (error) {
+            console.error('Error submitting form:', error);
+            errorMessage.classList.remove('d-none');
+            errorMessage.innerHTML = '<i class="fas fa-exclamation-circle me-2"></i>Error submitting form';
+            setTimeout(() => {
+                trainingModal.hide();
+            }, 5000);
+        }
+    });
+</script>
+{% endblock %} 

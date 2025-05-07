@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+
+{% block title %}Home - Face Recognition System{% endblock %}
+
+{% block content %}
+{% if not session.get('user') %}
+<div class="row justify-content-center">
+    <div class="col-md-8 text-center">
+        <h1 class="display-4 mb-4">Welcome to Face Recognition System</h1>
+        <p class="lead mb-4">A secure and efficient way to manage attendance using facial recognition technology.</p>
+        <div class="d-grid gap-3 d-sm-flex justify-content-sm-center">
+            <a href="{{ url_for('login') }}" class="btn btn-primary btn-lg px-4 gap-3">Login</a>
+            <a href="{{ url_for('about') }}" class="btn btn-outline-secondary btn-lg px-4">Learn More</a>
+            
+        </div>
+    </div>
+</div>
+{% else %}
+    {% if session.get('user_type') == 'admin' %}
+    <div class="row">
+        <div class="col-md-12 mb-4">
+            <h2 class="mb-4">Admin Dashboard</h2>
+        </div>
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">
+                        <i class="fas fa-user-plus me-2"></i>Add New Employee
+                    </h5>
+                    <p class="card-text">Register new employees and add their face data to the system.</p>
+                    <a href="{{ url_for('add_employee') }}" class="btn btn-primary">Add Employee</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">
+                        <i class="fas fa-users me-2"></i>Manage Employees
+                    </h5>
+                    <p class="card-text">View and manage existing employee records and attendance data.</p>
+                    <a href="{{ url_for('manage_employees') }}" class="btn btn-primary">View Employees</a>
+                </div>
+            </div>
+        </div>
+        <!-- <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">
+                        <i class="fas fa-camera me-2"></i>Face Recognition
+                    </h5>
+                    <p class="card-text">Access the real-time face recognition system for employee verification.</p>
+                    <a href="{{ url_for('face_recognition') }}" class="btn btn-primary">Start Recognition</a>
+                </div>
+            </div>
+        </div> -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">
+                        <i class="fas fa-chart-bar me-2"></i>Attendance Reports
+                    </h5>
+                    <p class="card-text">Generate and view attendance reports and analytics.</p>
+                    <a href="{{ url_for('attendance_report') }}" class="btn btn-primary">View Reports</a>
+                </div>
+            </div>
+        </div>
+        <!-- <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">
+                        <i class="fas fa-cog me-2"></i>System Settings
+                    </h5>
+                    <p class="card-text">Configure system settings and manage user permissions.</p>
+                    <a href="#" class="btn btn-primary">Settings</a>
+                </div>
+            </div>
+        </div> -->
+    </div>
+    {% else %}
+    <div class="row">
+        <div class="col-md-12 mb-4">
+            <h2 class="mb-4">Employee Dashboard</h2>
+        </div>
+        <div class="col-md-8 mx-auto">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title text-center mb-4">
+                        <i class="fas fa-camera me-2"></i>Face Recognition Attendance
+                    </h5>
+                    <div class="text-center mb-4">
+                        <p class="card-text">Use your face to mark your attendance for the day.</p>
+                        <button id="open-camera-btn" class="btn btn-primary btn-lg">
+                            <i class="fas fa-camera me-2"></i>Start Recognition
+                        </button>
+                    </div>
+                    <div class="text-center">
+                        <video id="webcam" class="d-none" autoplay></video>
+                        <canvas id="canvas" class="d-none"></canvas>
+                        <div id="results" class="mt-3"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if session.get('user') and session.get('user_type') == 'employee' %}
+    <script>
+        const video = document.getElementById('webcam');
+        const canvas = document.getElementById('canvas');
+        const openCameraBtn = document.getElementById('open-camera-btn');
+        const resultsDiv = document.getElementById('results');
+        let stream = null;
+        let isRecognizing = false;
+
+        openCameraBtn.addEventListener('click', () => {
+            navigator.mediaDevices.getUserMedia({ 
+                video: { 
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    facingMode: "user"
+                } 
+            })
+            .then((streamObj) => {
+                stream = streamObj;
+                video.srcObject = stream;
+            video.classList.remove('d-none');
+            openCameraBtn.classList.add('d-none');
+                isRecognizing = true;
+                detectFaces();
+            })
+            .catch((err) => {
+                console.error("Error accessing the webcam: ", err);
+                let errorMessage = "Failed to access the webcam. ";
+                if (err.name === 'NotAllowedError') {
+                    errorMessage += "Please grant camera permissions in your browser settings.";
+                } else if (err.name === 'NotFoundError') {
+                    errorMessage += "No camera device found. Please connect a camera and try again.";
+                } else if (err.name === 'NotReadableError') {
+                    errorMessage += "Camera is in use by another application. Please close other apps using the camera.";
+                } else {
+                    errorMessage += "Please ensure your camera is connected and working properly.";
+                }
+                alert(errorMessage);
+            openCameraBtn.classList.remove('d-none');
+            video.classList.add('d-none');
+        });
+    });
+
+        function detectFaces() {
+            if (!isRecognizing) return;
+
+            const context = canvas.getContext('2d');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        const imageData = canvas.toDataURL('image/jpeg', 0.8);
+
+            fetch('/detect_face', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `image=${encodeURIComponent(imageData)}`,
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.face_detected) {
+                    recognizeFace(imageData);
+                } else {
+                setTimeout(detectFaces, 1000);
+                }
+            })
+            .catch(error => {
+                console.error("Error detecting face: ", error);
+                resultsDiv.innerHTML = "Error detecting face. Please try again.";
+            setTimeout(detectFaces, 2000);
+            });
+        }
+
+        function recognizeFace(imageData) {
+            fetch('/recognize_webcam', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `image=${encodeURIComponent(imageData)}`,
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                resultsDiv.innerHTML = `
+                    <div class="alert alert-success">
+                        <i class="fas fa-check-circle me-2"></i>
+                        Attendance marked successfully for ${data.name} (ID: ${data.emp_id})
+                    </div>`;
+                } else {
+                resultsDiv.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-circle me-2"></i>
+                        Face not recognized. Please try again.
+                    </div>`;
+            }
+            setTimeout(detectFaces, 2000);
+            })
+            .catch(error => {
+                console.error("Error recognizing face: ", error);
+            resultsDiv.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-circle me-2"></i>
+                    An error occurred while recognizing the face.
+                </div>`;
+            setTimeout(detectFaces, 2000);
+            });
+        }
+    </script>
+{% endif %}
+{% endblock %}

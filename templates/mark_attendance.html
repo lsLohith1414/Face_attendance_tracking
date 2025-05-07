@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+
+{% block title %}Mark Attendance - Face Recognition System{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">
+                    <i class="fas fa-camera me-2"></i>Mark Your Attendance
+                </h4>
+            </div>
+            <div class="card-body">
+                <div class="text-center mb-4">
+                    <p class="lead">Select an action below to start the face recognition process.</p>
+                </div>
+                
+                <!-- Check-in Section -->
+                <div id="checkInSection" class="d-none">
+                    <div class="text-center mb-4">
+                        <h5 class="text-success">
+                            <i class="fas fa-sign-in-alt me-2"></i>Check In
+                        </h5>
+                        <p>Please position your face in front of the camera for check-in.</p>
+                    </div>
+                    
+                    <div class="row justify-content-center mb-4">
+                        <div class="col-md-8">
+                            <div class="video-container position-relative">
+                                <video id="checkInVideo" class="w-100 rounded" autoplay playsinline></video>
+                                <div id="checkInOverlay" class="position-absolute top-0 start-0 w-100 h-100 d-none">
+                                    <div class="d-flex justify-content-center align-items-center h-100">
+                                        <div class="spinner-border text-success" role="status">
+                                            <span class="visually-hidden">Loading...</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Check-out Section -->
+                <div id="checkOutSection" class="d-none">
+                    <div class="text-center mb-4">
+                        <h5 class="text-danger">
+                            <i class="fas fa-sign-out-alt me-2"></i>Check Out
+                        </h5>
+                        <p>Please position your face in front of the camera for check-out.</p>
+                    </div>
+                    
+                    <div class="row justify-content-center mb-4">
+                        <div class="col-md-8">
+                            <div class="video-container position-relative">
+                                <video id="checkOutVideo" class="w-100 rounded" autoplay playsinline></video>
+                                <div id="checkOutOverlay" class="position-absolute top-0 start-0 w-100 h-100 d-none">
+                                    <div class="d-flex justify-content-center align-items-center h-100">
+                                        <div class="spinner-border text-danger" role="status">
+                                            <span class="visually-hidden">Loading...</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div id="actionButtons" class="row justify-content-center">
+                    <div class="col-md-6">
+                        <button id="checkInBtn" class="btn btn-success btn-lg w-100 mb-3">
+                            <i class="fas fa-sign-in-alt me-2"></i>Check In
+                        </button>
+                    </div>
+                    <div class="col-md-6">
+                        <button id="checkOutBtn" class="btn btn-danger btn-lg w-100 mb-3">
+                            <i class="fas fa-sign-out-alt me-2"></i>Check Out
+                        </button>
+                    </div>
+                </div>
+
+                <div id="result" class="mt-4 text-center d-none">
+                    <div class="alert" role="alert"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const checkInVideo = document.getElementById('checkInVideo');
+    const checkOutVideo = document.getElementById('checkOutVideo');
+    const checkInOverlay = document.getElementById('checkInOverlay');
+    const checkOutOverlay = document.getElementById('checkOutOverlay');
+    const checkInBtn = document.getElementById('checkInBtn');
+    const checkOutBtn = document.getElementById('checkOutBtn');
+    const checkInSection = document.getElementById('checkInSection');
+    const checkOutSection = document.getElementById('checkOutSection');
+    const actionButtons = document.getElementById('actionButtons');
+    const result = document.getElementById('result');
+    const resultAlert = result.querySelector('.alert');
+
+    let checkInStream = null;
+    let checkOutStream = null;
+    let isProcessing = false;
+    let recognitionInterval = null;
+
+    // Function to stop all video streams and intervals
+    function stopAllStreams() {
+        if (checkInStream) {
+            checkInStream.getTracks().forEach(track => track.stop());
+            checkInStream = null;
+        }
+        if (checkOutStream) {
+            checkOutStream.getTracks().forEach(track => track.stop());
+            checkOutStream = null;
+        }
+        if (recognitionInterval) {
+            clearInterval(recognitionInterval);
+            recognitionInterval = null;
+        }
+    }
+
+    // Function to handle attendance marking
+    async function markAttendance(checkType, videoElement) {
+        if (isProcessing) return;
+        isProcessing = true;
+
+        const overlay = checkType === 'check_in' ? checkInOverlay : checkOutOverlay;
+        overlay.classList.remove('d-none');
+
+        try {
+            // Capture the current frame
+            const canvas = document.createElement('canvas');
+            canvas.width = videoElement.videoWidth;
+            canvas.height = videoElement.videoHeight;
+            canvas.getContext('2d').drawImage(videoElement, 0, 0);
+            const imageData = canvas.toDataURL('image/jpeg', 0.8);
+
+            const response = await fetch('/mark_attendance', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    check_type: checkType,
+                    image: imageData
+                })
+            });
+
+            const data = await response.json();
+            
+            // Show appropriate message based on check type and success
+            if (data.success) {
+                const time = new Date().toLocaleTimeString();
+                const action = checkType === 'check_in' ? 'Check-in' : 'Check-out';
+                resultAlert.className = 'alert alert-success';
+                resultAlert.innerHTML = `
+                    <i class="fas fa-check-circle me-2"></i>
+                    ${action} successful for ${data.name} (ID: ${data.emp_id}) at ${time}
+                `;
+                result.classList.remove('d-none');
+
+                // Keep the camera running and section visible for both check-in and check-out
+                const section = checkType === 'check_in' ? checkInSection : checkOutSection;
+                section.classList.remove('d-none');
+                
+                // Show a message that camera is ready for next person
+                const existingMessage = section.querySelector('.alert-info');
+                if (!existingMessage) {
+                    const cameraMessage = document.createElement('div');
+                    cameraMessage.className = 'alert alert-info mt-3';
+                    cameraMessage.innerHTML = `
+                        <i class="fas fa-camera me-2"></i>
+                        Camera is ready for the next person to ${checkType === 'check_in' ? 'check in' : 'check out'}
+                    `;
+                    section.appendChild(cameraMessage);
+                }
+            } else {
+                resultAlert.className = 'alert alert-danger';
+                resultAlert.innerHTML = `
+                    <i class="fas fa-exclamation-circle me-2"></i>
+                    ${data.message || 'Failed to mark attendance. Please try again.'}
+                `;
+                result.classList.remove('d-none');
+            }
+        } catch (error) {
+            console.error('Error marking attendance:', error);
+            resultAlert.className = 'alert alert-danger';
+            resultAlert.innerHTML = `
+                <i class="fas fa-exclamation-circle me-2"></i>
+                An error occurred while marking attendance. Please try again.
+            `;
+            result.classList.remove('d-none');
+        } finally {
+            overlay.classList.add('d-none');
+            isProcessing = false;
+        }
+    }
+
+    // Function to continuously check for face recognition
+    function startFaceRecognition(videoElement, checkType) {
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        
+        function checkFrame() {
+            if (!videoElement.srcObject) return;
+            
+            canvas.width = videoElement.videoWidth;
+            canvas.height = videoElement.videoHeight;
+            context.drawImage(videoElement, 0, 0);
+            
+            const imageData = canvas.toDataURL('image/jpeg', 0.8);
+            
+            // First detect face
+            fetch('/detect_face', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `image=${encodeURIComponent(imageData)}`,
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.face_detected) {
+                    // If face detected, try to recognize it
+                    fetch('/recognize_face', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: `image=${encodeURIComponent(imageData)}`,
+                    })
+                    .then(response => response.json())
+                    .then(recognitionData => {
+                        if (recognitionData.success) {
+                            markAttendance(checkType, videoElement);
+                        } else {
+                            // Show a message that face is not recognized
+                            const section = checkType === 'check_in' ? checkInSection : checkOutSection;
+                            const existingMessage = section.querySelector('.alert-warning');
+                            if (!existingMessage) {
+                                const message = document.createElement('div');
+                                message.className = 'alert alert-warning mt-3';
+                                message.innerHTML = `
+                                    <i class="fas fa-exclamation-triangle me-2"></i>
+                                    Face not recognized. Please try again or wait for the next person.
+                                `;
+                                section.appendChild(message);
+                            }
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error recognizing face:', error);
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('Error detecting face:', error);
+            });
+        }
+        
+        // Check every second
+        recognitionInterval = setInterval(checkFrame, 1000);
+    }
+
+    // Handle check-in button click
+    checkInBtn.addEventListener('click', async () => {
+        try {
+            checkInStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            checkInVideo.srcObject = checkInStream;
+            checkInSection.classList.remove('d-none');
+            actionButtons.classList.add('d-none');
+            startFaceRecognition(checkInVideo, 'check_in');
+        } catch (err) {
+            console.error('Error accessing webcam:', err);
+            resultAlert.className = 'alert alert-danger';
+            resultAlert.textContent = 'Error accessing webcam. Please make sure you have granted camera permissions.';
+            result.classList.remove('d-none');
+        }
+    });
+
+    // Handle check-out button click
+    checkOutBtn.addEventListener('click', async () => {
+        try {
+            checkOutStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            checkOutVideo.srcObject = checkOutStream;
+            checkOutSection.classList.remove('d-none');
+            actionButtons.classList.add('d-none');
+            startFaceRecognition(checkOutVideo, 'check_out');
+        } catch (err) {
+            console.error('Error accessing webcam:', err);
+            resultAlert.className = 'alert alert-danger';
+            resultAlert.textContent = 'Error accessing webcam. Please make sure you have granted camera permissions.';
+            result.classList.remove('d-none');
+        }
+    });
+});
+</script>
+{% endblock %} 

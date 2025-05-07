@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block title %}Attendance Report - Face Recognition System{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title mb-0">
+                        <i class="fas fa-chart-bar me-2"></i>Attendance Report
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <!-- Summary Cards -->
+                    <div class="row mb-4">
+                        <div class="col-md-3">
+                            <div class="card bg-primary text-white">
+                                <div class="card-body">
+                                    <h5 class="card-title">Total Employees</h5>
+                                    <h2 id="total-employees">0</h2>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-success text-white">
+                                <div class="card-body">
+                                    <h5 class="card-title">Present Today</h5>
+                                    <h2 id="present-employees">0</h2>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-danger text-white">
+                                <div class="card-body">
+                                    <h5 class="card-title">Absent Today</h5>
+                                    <h2 id="absent-employees">0</h2>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-info text-white">
+                                <div class="card-body">
+                                    <h5 class="card-title">Total Records</h5>
+                                    <h2 id="total-records">0</h2>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Attendance Table -->
+                    <div class="table-responsive">
+                        <table id="attendance-table" class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Employee ID</th>
+                                    <th>Name</th>
+                                    <th>Total Hours</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Attendance History Modal -->
+<div class="modal fade" id="attendance-modal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Attendance History</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <h6 id="employee-name"></h6>
+                <div class="table-responsive">
+                    <table class="table" id="history-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Check In</th>
+                                <th>Check Out</th>
+                                <th>Total Hours</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let attendanceTable;
+let historyTable;
+
+$(document).ready(function() {
+    // Initialize DataTable
+    attendanceTable = $('#attendance-table').DataTable({
+        "order": [[0, "desc"]], // Sort by date in descending order
+        "pageLength": 25,
+        "language": {
+            "search": "Search records:"
+        },
+        "columns": [
+            { data: 'date' },
+            { data: 'emp_id' },
+            { data: 'name' },
+            { data: 'total_hours' }
+        ]
+    });
+
+    historyTable = $('#history-table').DataTable({
+        order: [[0, 'desc']], // Sort by date descending
+        columns: [
+            { data: 'date' },
+            { data: 'check_in_time' },
+            { data: 'check_out_time' },
+            { data: 'total_hours' }
+        ]
+    });
+
+    // Function to load attendance data
+    function loadAttendanceData() {
+        $.ajax({
+            url: '/get_attendance_data',
+            method: 'GET',
+            success: function(response) {
+                if (response.error) {
+                    alert('Error: ' + response.error);
+                    return;
+                }
+                
+                // Update summary cards
+                $('#total-employees').text(response.total_employees);
+                $('#present-employees').text(response.present_employees);
+                $('#absent-employees').text(response.absent_employees);
+                $('#total-records').text(response.total_records);
+                
+                // Clear and reload table data
+                attendanceTable.clear().rows.add(response.attendance_data).draw();
+            },
+            error: function() {
+                alert('Error loading attendance data');
+            }
+        });
+    }
+
+    // Load initial data
+    loadAttendanceData();
+
+    // Add click handler for employee rows
+    $('#attendance-table tbody').on('click', 'tr', function() {
+        const data = attendanceTable.row(this).data();
+        if (data) {
+            showAttendanceHistory(data.emp_id);
+        }
+    });
+});
+
+function showAttendanceHistory(empId) {
+    $.get(`/get_employee_attendance/${empId}`)
+        .done(function(response) {
+            $('#employee-name').text(`${response.employee.name} - ${response.employee.department}`);
+            historyTable.clear().rows.add(response.attendance_history).draw();
+            $('#attendance-modal').modal('show');
+        })
+        .fail(function(error) {
+            alert('Error loading attendance history');
+        });
+}
+</script>
+{% endblock %} 
