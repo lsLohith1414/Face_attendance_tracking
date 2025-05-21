@@ -766,6 +766,14 @@ class FaceRecognitionSystem:
     def process_and_save_embeddings(self, person_name):
         """Process collected faces and save embeddings with improved quality"""
         try:
+            # Reload the latest embeddings from disk before updating
+            if self.embeddings_file.exists():
+                try:
+                    with open(self.embeddings_file, 'rb') as f:
+                        self.face_embeddings = pickle.load(f)
+                except Exception as e:
+                    self.logger.warning(f"Could not reload embeddings from disk: {e}")
+            
             person_dir = self.temp_faces_dir / person_name
             
             if not person_dir.exists():
