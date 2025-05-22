@@ -200,6 +200,9 @@ $(document).ready(function() {
                     <p class="mb-0 text-danger">${record.check_out_time ? record.check_out_time.split(' ')[1] : '-'}</p>
                 </div>
             </div>
+            <div class="text-center text-muted">
+                <small>Today: ${record.check_in_time.split(' ')[0]}</small>
+            </div>
         `);
     }
 
@@ -234,6 +237,7 @@ $(document).ready(function() {
 
     // Load attendance data
     function loadAttendanceData() {
+        showLoading();
         $.ajax({
             url: '/get_employee_attendance/{{ session.get("emp_id") }}',
             method: 'GET',
@@ -244,37 +248,28 @@ $(document).ready(function() {
                 }
                 
                 // Update today's attendance
-                const today = new Date().toISOString().split('T')[0];
-                const todayRecord = response.attendance_history.find(record => 
-                    record.check_in_time.startsWith(today)
-                );
+                updateTodayAttendance(response);
                 
-                updateTodayAttendance({ today_record: todayRecord });
+                // Update total working hours
                 updateTotalWorkingHours(response);
                 
-                // Update full history table
-                if (response.attendance_history.length > 0) {
-                    showAttendanceData(response.attendance_history);
-                } else {
-                    showError('No attendance records found.');
-                }
+                // Update attendance history table
+                showAttendanceData(response.attendance_history);
             },
             error: function(xhr, status, error) {
-                let errorMessage = 'Error loading attendance data.';
-                if (xhr.responseJSON && xhr.responseJSON.error) {
-                    errorMessage = xhr.responseJSON.error;
-                }
-                showError(errorMessage);
+                showError('Failed to load attendance data: ' + error);
             }
         });
     }
 
-    // Load data when page loads
+    // Load initial data
     loadAttendanceData();
 
-    // Load attendance history when modal is shown
+    // Refresh data every 5 minutes
+    setInterval(loadAttendanceData, 300000);
+
+    // Load attendance history when modal is opened
     $('#attendanceHistoryModal').on('show.bs.modal', function() {
-        showLoading();
         loadAttendanceData();
     });
 });

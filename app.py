@@ -802,6 +802,31 @@ def get_employee_attendance(emp_id):
         if not employee:
             return jsonify({'error': 'Employee not found'}), 404
         
+        # Get today's date
+        today = datetime.now().strftime("%Y-%m-%d")
+        
+        # Get today's attendance record
+        cursor.execute("""
+            SELECT 
+                check_in_time,
+                check_out_time,
+                total_working_hours
+            FROM attendance 
+            WHERE emp_id = ? AND date(check_in_time) = ?
+            ORDER BY check_in_time DESC
+            LIMIT 1
+        """, (emp_id, today))
+        today_record = cursor.fetchone()
+        
+        # Format today's record if exists
+        today_attendance = None
+        if today_record:
+            today_attendance = {
+                'check_in_time': today_record[0],
+                'check_out_time': today_record[1],
+                'total_hours': today_record[2] if today_record[2] is not None else "00:00:00"
+            }
+        
         # Get total working hours data
         cursor.execute("""
             SELECT date, total_hours_worked
@@ -847,6 +872,7 @@ def get_employee_attendance(emp_id):
                 'name': employee[0],
                 'department': employee[1]
             },
+            'today_record': today_attendance,
             'attendance_history': history_data,
             'total_hours_data': total_hours_formatted
         })
